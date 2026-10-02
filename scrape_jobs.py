@@ -773,8 +773,22 @@ def render_messages(jobs: list[Job]) -> tuple[str, str]:
     return "\n".join(text_lines).strip() + "\n", "\n".join(html_parts)
 
 
-def send_email(jobs: list[Job], env: dict[str, str]) -> None:
-    text_body, html_body = render_messages(jobs)
+def send_email(jobs: list[Job], env: dict[str, str], today: date) -> None:
+    if jobs:
+        text_body, html_body = render_messages(jobs)
+        subject = f"Novi SSS natječaji u Zagrebu ({len(jobs)})"
+    else:
+        status = (
+            "Provjera je uspješno izvršena. Danas nema novih otvorenih SSS "
+            "natječaja na praćenim stranicama."
+        )
+        text_body = status + "\n"
+        html_body = (
+            "<!DOCTYPE html><html><body><p>"
+            + escape(status)
+            + "</p></body></html>"
+        )
+        subject = f"Nema novih SSS Natječaja - Zagreb ({today.strftime('%d.%m.%Y.')})"
     response = requests.post(
         RESEND_URL,
         headers={
@@ -784,7 +798,7 @@ def send_email(jobs: list[Job], env: dict[str, str]) -> None:
         json={
             "from": env["RESEND_FROM_EMAIL"],
             "to": [env["RECEIVER_EMAIL"]],
-            "subject": f"Novi SSS natječaji u Zagrebu ({len(jobs)})",
+            "subject": subject,
             "html": html_body,
             "text": text_body,
         },
@@ -799,7 +813,10 @@ def send_email(jobs: list[Job], env: dict[str, str]) -> None:
     except ValueError:
         logger.error("Resend returned a response that is not JSON")
         raise SystemExit(1) from None
-    logger.info("Sent %s jobs via Resend (%s)", len(jobs), message_id or "no id")
+    if jobs:
+        logger.info("Sent %s jobs via Resend (%s)", len(jobs), message_id or "no id")
+    else:
+        logger.info("Sent empty-result status via Resend (%s)", message_id or "no id")
 
 
 def main() -> None:
@@ -811,10 +828,10 @@ def main() -> None:
     jobs = collect_jobs(make_session(), today)
     fresh = [job for job in jobs if job.key not in sent_ids]
     logger.info("Matching jobs: %s, new: %s", len(jobs), len(fresh))
+    send_email(fresh, env, today)
     if not fresh:
-        logger.info("No new jobs. Email was not sent.")
+        logger.info("No new jobs. Status email was sent.")
         return
-    send_email(fresh, env)
     save_sent_ids(SENT_PATH, sent_ids | {job.key for job in fresh})
     logger.info("Updated %s", SENT_PATH)
 
@@ -825,4 +842,3 @@ if __name__ == "__main__":
     except requests.RequestException:
         logger.exception("HTTP request failed")
         sys.exit(1)
-
