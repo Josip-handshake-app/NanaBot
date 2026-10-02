@@ -1,0 +1,46 @@
+name: Daily Zagreb jobs
+
+on:
+  schedule:
+    # GitHub cron is UTC. Zagreb is UTC+2 in summer and UTC+1 in winter,
+    # so one of these two runs is 08:00 local time. Dedup prevents a second email.
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape and send
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+        run: python scrape_jobs.py
+
+      - name: Commit sent job ids
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sent_jobs.json
+          if git diff --cached --quiet; then
+            echo "No changes to sent_jobs.json"
+            exit 0
+          fi
+          git commit -m "Update sent job ids"
+          git push
