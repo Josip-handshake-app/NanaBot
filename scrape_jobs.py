@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from html import escape, unescape
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import quote, urljoin
+from urllib.parse import urljoin
 from xml.etree import ElementTree
 
 import requests
@@ -843,29 +843,12 @@ def render_messages(jobs: list[Job]) -> tuple[str, str]:
     return "\n".join(text_lines).strip() + "\n", "\n".join(html_parts)
 
 
-def sifra_copy_url(code: str) -> str:
-    """Public page that copies this competition code. Empty when it cannot be hosted."""
-    if not code:
-        return ""
-    base = os.environ.get("SIFRA_PAGE_URL", "").strip()
-    if not base:
-        repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
-        if "/" not in repository:
-            return ""
-        owner, name = repository.split("/", 1)
-        base = f"https://{owner.lower()}.github.io/{name.lower()}/sifra.html"
-    base = base.split("#", 1)[0].split("?", 1)[0]
-    return f"{base}?sifra={quote(code, safe='')}"
-
-
 def format_job_text(job: Job) -> str:
     if job.key.startswith("selekcija:"):
         code = job.code or "nije navedena"
-        copy_url = sifra_copy_url(job.code)
-        copy = f" | Kopiraj: {copy_url}" if copy_url else ""
         return (
             f"• {job.office.upper()} - {job.title} "
-            f"(Link: {SELEKCIJA_PORTAL_URL} | Šifra: {code}{copy})"
+            f"(Link: {SELEKCIJA_PORTAL_URL} | Šifra: {code})"
         )
     return f"• {job.office} - {job.title} (Link: {job.url})"
 
@@ -873,22 +856,15 @@ def format_job_text(job: Job) -> str:
 def format_job_html(job: Job) -> str:
     if job.key.startswith("selekcija:"):
         code = job.code or "nije navedena"
-        copy_url = sifra_copy_url(job.code)
-        if copy_url:
-            sifra = '<a href="{url}"><strong>Šifra: {code}</strong></a>'.format(
-                url=escape(copy_url, quote=True),
-                code=escape(code),
-            )
-        else:
-            sifra = f"<strong>Šifra: {escape(code)}</strong>"
         return (
             "<p>• {office} - {title} "
-            "(Link: <a href=\"{portal}\">{portal}</a> | {sifra})"
+            "(Link: <a href=\"{portal}\">{portal}</a> | "
+            "<strong>Šifra: {code}</strong>)"
             "<br>Rok: {deadline}</p>".format(
                 office=escape(job.office.upper()),
                 title=escape(job.title),
                 portal=escape(SELEKCIJA_PORTAL_URL, quote=True),
-                sifra=sifra,
+                code=escape(code),
                 deadline=escape(job.deadline),
             )
         )
