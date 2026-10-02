@@ -44,7 +44,7 @@ SELEKCIJA_API_URL = (
     "https://selekcija.gov.hr/MPUCSZ_Backend_Prod/rest/"
     "Natjecaji/ObjavljeniNatjecajiList/"
 )
-SELEKCIJA_PORTAL_URL = "https://selekcija.gov.hr"
+SELEKCIJA_PORTAL_URL = "https://selekcija.gov.hr/natjecaji/objavljeni-natjecaji"
 HOLDING_LIST_URL = (
     "https://www.zgh.hr/karijere/javni-natjecaji-za-zaposljavanje/5699"
 )
@@ -102,6 +102,7 @@ class Job:
     deadline: str
     deadline_date: date | None = None
     code: str = ""
+    listing_number: str = ""
 
 
 def configure_logging() -> None:
@@ -201,6 +202,23 @@ def is_sss(text: str) -> bool:
 def check_sss_text(text: str) -> bool:
     """SSS check used by the Holding board and the other collectors."""
     return is_sss(text)
+
+
+LISTING_PREFIX_RE = re.compile(
+    r"^\s*(\d+(?:\.\d+)*)\.?\s*[-–—:]\s*(.+)$",
+    re.DOTALL,
+)
+
+
+def listing_number_and_title(title: str, workplace_code: str) -> tuple[str, str]:
+    """Portal headers look like '15. - državnoodvjetnički vježbenik'."""
+    number = workplace_code.strip().rstrip(".")
+    match = LISTING_PREFIX_RE.match(title.strip())
+    if match:
+        if not number:
+            number = match.group(1).rstrip(".")
+        title = match.group(2).strip()
+    return number, title
 
 
 def has_city_trigger(text: str) -> bool:
@@ -670,7 +688,13 @@ def collect_selekcija(session: requests.Session, today: date) -> list[Job]:
             workplace = str(record.get("MjestoRada") or "")
             if not is_sss(education) or "zagreb" not in workplace.lower():
                 continue
-            title = str(record.get("RadnoMjestoNaziv") or "").strip()
+            raw_title = str(
+                record.get("RadnoMjestoNaziv")
+                or record.get("NazivRadnogMjesta")
+                or ""
+            ).strip()
+            workplace_code = str(record.get("SifraRadnogMjesta") or "").strip()
+            listing_number, title = listing_number_and_title(raw_title, workplace_code)
             office = str(record.get("DrzavnoTijeloNaziv") or "").strip()
             competition_id = str(record.get("NatjecajID") or record.get("ID") or "")
             code = str(record.get("SifraNatjecaja") or "").strip()
@@ -691,6 +715,7 @@ def collect_selekcija(session: requests.Session, today: date) -> list[Job]:
                     deadline=deadline,
                     deadline_date=due,
                     code=code,
+                    listing_number=listing_number,
                 )
             )
         if len(records) < page_size:
@@ -841,23 +866,25 @@ def render_messages(jobs: list[Job]) -> tuple[str, str]:
 
 def format_job_text(job: Job) -> str:
     if job.key.startswith("selekcija:"):
+        number = job.listing_number or "nije naveden"
         code = job.code or "nije navedena"
         return (
-            f"• {job.office} - {job.title} "
-            f"(Tražilica: Selekcija Portal Link | Kopiraj šifru natječaja: {code})"
+            f"• {job.office.upper()} - OGLAS BR. {number}: {job.title} "
+            f"(Link: {SELEKCIJA_PORTAL_URL} | Šifra: {code})"
         )
     return f"• {job.office} - {job.title} (Link: {job.url})"
 
 
 def format_job_html(job: Job) -> str:
     if job.key.startswith("selekcija:"):
+        number = job.listing_number or "nije naveden"
         code = job.code or "nije navedena"
         return (
-            "<p>• {office} - {title} "
-            "(Tražilica: <a href=\"{portal}\">Selekcija Portal Link</a> | "
-            "Kopiraj šifru natječaja: {code})"
+            "<p>• {office} - OGLAS BR. {number}: {title} "
+            "(Link: <a href=\"{portal}\">{portal}</a> | Šifra: {code})"
             "<br>Rok: {deadline}</p>".format(
-                office=escape(job.office),
+                office=escape(job.office.upper()),
+                number=escape(number),
                 title=escape(job.title),
                 portal=escape(SELEKCIJA_PORTAL_URL, quote=True),
                 code=escape(code),
