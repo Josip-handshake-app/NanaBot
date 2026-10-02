@@ -44,7 +44,10 @@ SELEKCIJA_API_URL = (
     "https://selekcija.gov.hr/MPUCSZ_Backend_Prod/rest/"
     "Natjecaji/ObjavljeniNatjecajiList/"
 )
-SELEKCIJA_LIST_URL = "https://selekcija.gov.hr/natjecaji/objavljeni-natjecaji"
+SELEKCIJA_PORTAL_URL = "https://selekcija.gov.hr"
+HOLDING_LIST_URL = (
+    "https://www.zgh.hr/karijere/javni-natjecaji-za-zaposljavanje/5699"
+)
 RESEND_URL = "https://api.resend.com/emails"
 
 USER_AGENT = (
@@ -98,6 +101,7 @@ class Job:
     url: str
     deadline: str
     deadline_date: date | None = None
+    code: str = ""
 
 
 def configure_logging() -> None:
@@ -192,6 +196,11 @@ def normalize_key_part(value: str) -> str:
 
 def is_sss(text: str) -> bool:
     return SSS_RE.search(text) is not None
+
+
+def check_sss_text(text: str) -> bool:
+    """SSS check used by the Holding board and the other collectors."""
+    return is_sss(text)
 
 
 def has_city_trigger(text: str) -> bool:
@@ -670,8 +679,6 @@ def collect_selekcija(session: requests.Session, today: date) -> list[Job]:
             if not competition_id or not title:
                 continue
             deadline = due_text or "nije naveden"
-            if code:
-                deadline = f"{deadline} · Šifra: {code}"
             if due is not None and due < today:
                 logger.info("Skipping expired state competition %s", code or competition_id)
                 continue
@@ -680,9 +687,10 @@ def collect_selekcija(session: requests.Session, today: date) -> list[Job]:
                     key=f"selekcija:{competition_id}",
                     office=office or "Državno tijelo",
                     title=title.upper(),
-                    url=SELEKCIJA_LIST_URL,
+                    url=SELEKCIJA_PORTAL_URL,
                     deadline=deadline,
                     deadline_date=due,
+                    code=code,
                 )
             )
         if len(records) < page_size:
@@ -693,7 +701,69 @@ def collect_selekcija(session: requests.Session, today: date) -> list[Job]:
     return jobs
 
 
-def collect_jobs(session: requests.Session, today: date) -> list[Job]:
+def scrape_holding(sent_ids: set[str]) -> list[Job]:
+    """Open SSS posts on the Zagrebački Holding public-competitions board."""
+    session = make_session()
+    today = date.today()
+    logger.info("Reading Holding board %s", HOLDING_LIST_URL)
+    page = soup_of(session, HOLDING_LIST_URL)
+    jobs: list[Job] = []
+    seen: set[str] = set()
+    for row in page.select("table.table tr"):
+        cells = row.find_all("td")
+        if len(cells) < 5:
+            continue
+        link = cells[1].find("a", href=True)
+        if link is None:
+            continue
+        url = resolve_url(HOLDING_LIST_URL, str(link.get("href") or ""))
+        if not url:
+            continue
+        title = collapse(link.get_text(" ", strip=True))
+        if not title or title.lower().startswith("napomena"):
+            continue
+        full = collapse(cells[1].get_text(" ", strip=True))
+        branch = full[len(title):].strip(" -\u00a0–—") if full.lower().startswith(title.lower()) else full
+        office = branch or "Zagrebački holding"
+        location = collapse(cells[-1].get_text(" ", strip=True))
+        if "zagreb" not in location.lower():
+            continue
+        raw_deadline = collapse(cells[3].get_text(" ", strip=True))
+        deadline_date = parse_dmy(raw_deadline)
+        deadline_text = raw_deadline or "nije naveden"
+        key = f"zagreb:holding:{url}:{normalize_key_part(title)}"
+        if key in sent_ids or key in seen:
+            continue
+        try:
+            details = document_text(session, url, {})
+        except requests.RequestException:
+            logger.warning("Could not read Holding notice %s", url)
+            continue
+        if not check_sss_text(details):
+            logger.info("Skipping Holding post without SSS: %s", title)
+            continue
+        job = make_job(
+            "holding",
+            office,
+            title,
+            url,
+            deadline_text,
+            deadline_date,
+            today,
+        )
+        if job is None:
+            continue
+        seen.add(job.key)
+        jobs.append(job)
+    logger.info("Holding SSS positions: %s", len(jobs))
+    return jobs
+
+
+def collect_jobs(
+    session: requests.Session,
+    today: date,
+    sent_ids: set[str],
+) -> list[Job]:
     collectors = (
         collect_city,
         collect_culture,
@@ -708,7 +778,12 @@ def collect_jobs(session: requests.Session, today: date) -> list[Job]:
         except Exception:
             failures += 1
             logger.exception("Source failed: %s", collector.__name__)
-    if failures == len(collectors):
+    try:
+        jobs.extend(scrape_holding(sent_ids))
+    except Exception:
+        failures += 1
+        logger.exception("Source failed: scrape_holding")
+    if failures == len(collectors) + 1:
         logger.error("Every source failed")
         raise SystemExit(1)
     unique: dict[str, Job] = {}
@@ -756,21 +831,48 @@ def render_messages(jobs: list[Job]) -> tuple[str, str]:
         "<p>Novi oglasi za radna mjesta SSS u Zagrebu.</p>",
     ]
     for job in ordered:
-        line = f"• {job.office} - {job.title} (Link: {job.url})"
-        text_lines.append(line)
+        text_lines.append(format_job_text(job))
         text_lines.append(f"  Rok: {job.deadline}")
         text_lines.append("")
-        html_parts.append(
-            "<p>• {office} - {title} (Link: <a href=\"{url}\">{url}</a>)"
+        html_parts.append(format_job_html(job))
+    html_parts.append("</body></html>")
+    return "\n".join(text_lines).strip() + "\n", "\n".join(html_parts)
+
+
+def format_job_text(job: Job) -> str:
+    if job.key.startswith("selekcija:"):
+        code = job.code or "nije navedena"
+        return (
+            f"• {job.office} - {job.title} "
+            f"(Tražilica: Selekcija Portal Link | Kopiraj šifru natječaja: {code})"
+        )
+    return f"• {job.office} - {job.title} (Link: {job.url})"
+
+
+def format_job_html(job: Job) -> str:
+    if job.key.startswith("selekcija:"):
+        code = job.code or "nije navedena"
+        return (
+            "<p>• {office} - {title} "
+            "(Tražilica: <a href=\"{portal}\">Selekcija Portal Link</a> | "
+            "Kopiraj šifru natječaja: {code})"
             "<br>Rok: {deadline}</p>".format(
                 office=escape(job.office),
                 title=escape(job.title),
-                url=escape(job.url, quote=True),
+                portal=escape(SELEKCIJA_PORTAL_URL, quote=True),
+                code=escape(code),
                 deadline=escape(job.deadline),
             )
         )
-    html_parts.append("</body></html>")
-    return "\n".join(text_lines).strip() + "\n", "\n".join(html_parts)
+    return (
+        "<p>• {office} - {title} (Link: <a href=\"{url}\">{url}</a>)"
+        "<br>Rok: {deadline}</p>".format(
+            office=escape(job.office),
+            title=escape(job.title),
+            url=escape(job.url, quote=True),
+            deadline=escape(job.deadline),
+        )
+    )
 
 
 def send_email(jobs: list[Job], env: dict[str, str], today: date) -> None:
@@ -825,7 +927,7 @@ def main() -> None:
     today = date.today()
     sent_ids = load_sent_ids(SENT_PATH)
     logger.info("Already sent: %s", len(sent_ids))
-    jobs = collect_jobs(make_session(), today)
+    jobs = collect_jobs(make_session(), today, sent_ids)
     fresh = [job for job in jobs if job.key not in sent_ids]
     logger.info("Matching jobs: %s, new: %s", len(jobs), len(fresh))
     send_email(fresh, env, today)
