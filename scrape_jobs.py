@@ -25,7 +25,10 @@ from xml.etree import ElementTree
 
 import requests
 from bs4 import BeautifulSoup
+from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 from pypdf import PdfReader
+from pypdf.errors import PdfReadError, PdfStreamError
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -337,18 +340,32 @@ def position_title(block: str) -> str:
 
 
 def pdf_text(payload: bytes) -> str:
-    reader = PdfReader(BytesIO(payload))
-    pages = []
-    for page in reader.pages[:20]:
-        pages.append(page.extract_text() or "")
-    return "\n".join(pages)
+    try:
+        reader = PdfReader(BytesIO(payload))
+        pages: list[str] = []
+        for page in reader.pages[:20]:
+            try:
+                pages.append(page.extract_text() or "")
+            except (PdfStreamError, PdfReadError) as exc:
+                logger.warning("Skipping unreadable PDF page: %s", exc)
+        return "\n".join(pages)
+    except (PdfStreamError, PdfReadError) as exc:
+        logger.warning("Skipping corrupted PDF: %s", exc)
+        return ""
 
 
 def docx_text(payload: bytes) -> str:
-    with zipfile.ZipFile(BytesIO(payload)) as archive:
-        xml = archive.read("word/document.xml")
-    root = ElementTree.fromstring(xml)
-    return " ".join(root.itertext())
+    try:
+        document = Document(BytesIO(payload))
+    except (PackageNotFoundError, zipfile.BadZipFile, ValueError) as exc:
+        logger.warning("Skipping unreadable Word file: %s", exc)
+        return ""
+    parts = [paragraph.text for paragraph in document.paragraphs]
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                parts.append(cell.text)
+    return "\n".join(part for part in parts if part.strip())
 
 
 def is_downloadable_document(url: str) -> bool:
@@ -808,3 +825,4 @@ if __name__ == "__main__":
     except requests.RequestException:
         logger.exception("HTTP request failed")
         sys.exit(1)
+
