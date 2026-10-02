@@ -2,9 +2,8 @@ name: Publish copy page
 
 on:
   push:
-    paths:
-      - docs/sifra.html
-      - .github/workflows/pages.yml
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -29,7 +28,8 @@ jobs:
       - name: Upload page
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          # Promijenjeno s 'docs' na '.' jer je sifra.html u korijenskoj mapi
+          path: '.'
 
       - name: Deploy to GitHub Pages
         id: deployment
