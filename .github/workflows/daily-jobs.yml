@@ -2,10 +2,9 @@ name: Daily Zagreb jobs
 
 on:
   schedule:
-    # GitHub cron is UTC. Zagreb is UTC+2 in summer and UTC+1 in winter,
-    # so one of these two runs is 08:00 local time. Dedup prevents a second email.
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
+    # GitHub cron is UTC. Both runs send only ids not already stored.
+    - cron: "27 4 * * *"
+    - cron: "27 5 * * *"
   workflow_dispatch:
 
 permissions:
