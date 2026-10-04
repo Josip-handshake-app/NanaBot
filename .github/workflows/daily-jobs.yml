@@ -2,9 +2,9 @@ name: Daily Zagreb jobs
 
 on:
   schedule:
-    # GitHub cron is UTC. Both runs send only ids not already stored.
-    - cron: "27 4 * * *"
-    - cron: "27 5 * * *"
+    # Postavljeno na 27 minuta kako si tražio da izbjegnemo zagušenje servera
+    - cron: "27 6 * * *"
+    - cron: "27 7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
       - name: Commit sent job ids
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@://github.com"
           git add sent_jobs.json
           if git diff --cached --quiet; then
             echo "No changes to sent_jobs.json"
