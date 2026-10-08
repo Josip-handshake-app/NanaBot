@@ -1,4 +1,4 @@
-# Zagreb SSS job alerts
+# Zagreb SSS job alerts- Scrape državne i gradske poslove,samo novi uvijek, github actions je sranje, nikad na vrijeme
 
 Daily check for high-school (`SSS`) public jobs in Zagreb. The script reads three city boards and the central state portal, emails new matches through [Resend](https://resend.com), and records what it already sent in `sent_jobs.json`.
 
