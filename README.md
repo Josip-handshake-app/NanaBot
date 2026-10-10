@@ -1,4 +1,4 @@
-# NanaBot, Zagreb SSS job alerts- "ScraperBot za državne i gradske poslove, mjesto rada :Zagreb, stručna sprema :SSS.""Napomena: Samo ponuda javnih poslova po kriterijima."
+# NanaBot, Zagreb SSS job alerts- "ScraperBot za državne i gradske poslove, mjesto rada :Zagreb, stručna sprema :SSS."                                                                     "Napomena: Samo ponuda javnih poslova po kriterijima."
 Nažalost , bot nikad ne ide van u određeno vrijeme zbog gužve valjda na serverima, ali dnevne obavijesti stižu, nekad jedna, nekad 3 :)....koga briga, radi...
 
 Automated Job Scraper with Email Notifications.
