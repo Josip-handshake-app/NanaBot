@@ -1,4 +1,4 @@
-# Zagreb SSS job alerts- "Scrapa državne i gradske poslove i šalje isključivo nove oglase. GitHub Actions je sranje i nikada ne pokreće na vrijeme, pa bot radi u čudne minute kako bi izbjegao gužvu na serverima."
+# Zagreb SSS job alerts- "ScrapeBot za državne i gradske poslove koji šalje isključivo nove oglase. GitHub Actions nikada ne pokreće na vrijeme, pa bot radi u čudne minute kako bi izbjegao gužvu na serverima."
 
 Daily check for high-school (`SSS`) public jobs in Zagreb. The script reads three city boards and the central state portal, emails new matches through [Resend](https://resend.com), and records what it already sent in `sent_jobs.json`.
 
