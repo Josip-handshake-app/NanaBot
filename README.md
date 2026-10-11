@@ -2,6 +2,8 @@
 Nažalost , bot nikad ne ide van u određeno vrijeme zbog gužve valjda na serverima, ali dnevne obavijesti stižu, nekad jedna, nekad 3 :)....koga briga, radi...
 
 Automated Job Scraper with Email Notifications.
+Automated alerting pipeline.
+Web crawler.
 Daily check for high-school (`SSS`) public jobs in Zagreb. The script reads three city boards and the central state portal, emails new matches through [Resend](https://resend.com), and records what it already sent in `sent_jobs.json`.
 
 ## Sources
